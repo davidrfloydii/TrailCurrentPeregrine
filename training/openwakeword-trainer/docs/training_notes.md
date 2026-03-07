@@ -40,12 +40,17 @@ Both files must be kept together for the model to load.
 
 ## Model Architecture
 
-The default config uses:
+The example config (`hey_echo.yaml`) uses minimal defaults:
 - **DNN** (not RNN) — simpler, faster inference
 - **layer_size: 32** — minimal CPU footprint, good enough for single-phrase detection
 - **50k training steps** — typically converges well for simple phrases
 
-For multi-word or phonetically complex phrases, consider `layer_size: 64` or `layer_size: 128`.
+For multi-word or phonetically complex phrases (like "hey peregrine"), use higher capacity:
+- **layer_size: 128** — more parameters for complex phoneme patterns
+- **200k training steps** — longer convergence for larger models
+- **augmentation_rounds: 3** — more data diversity to prevent overfitting
+
+The `hey_peregrine.yaml` config uses these higher values.
 
 ## Augmentation Strategy
 
@@ -104,6 +109,28 @@ Negative clips are saved to `training/real_clips_negative/<phrase>/`. Aim for 50
 
 Positive clips in `real_clips/` are automatically picked up by `train_wakeword.py` and copied into the positive training set before augmentation. Negative clips in `real_clips_negative/` are copied into the negative training set.
 
+## Ambient Noise Negatives
+
+Without ambient noise negatives, the model only sees speech during training. This causes it to output ~0.5 on silence and ambient sounds (fan noise, road noise, etc.) because it has never learned what "not speech" looks like.
+
+The fix is to generate ambient noise clips and featurize them into a separate `.npy` file:
+
+```bash
+cd training/
+python3 generate_ambient_negatives.py   # generates clips in real_clips_negative/
+python3 build_ambient_features.py       # produces data/negative_features_ambient.npy
+```
+
+Key constraints:
+- **Clip length must be exactly 2 seconds** (32000 samples at 16 kHz) to produce 16 embedding frames
+- **Feature shape must be (N, 16, 96)** — wrong clip length produces wrong shape and breaks the model
+- The ambient features are referenced in the training config as a separate `negative_ambient` class with its own batch slot, so the model reliably sees silence/noise examples every batch
+
+Sources used (all MIT-compatible):
+- Synthetic: fan noise, brown/pink/white noise, rain, road noise, 60 Hz hum, silence
+- MS-SNSD (MIT): 25+ categories of real-world ambient recordings
+- MUSAN (CC0/CC-BY-3.0): free sound + sound bible noise recordings
+
 ## Additional Compatibility Fixes
 
 ### `torchcodec` Required for Dataset Loading
@@ -138,6 +165,10 @@ The Piper `en_US-libritts_r-medium.pt` model is ~195 MB, not the 600 MB the orig
 Custom models generally need a lower detection threshold than pre-trained ones:
 - Pre-trained (e.g., `hey_jarvis`): threshold 0.7 works well
 - Custom trained with synthetic only: often needs 0.3–0.4
-- Custom trained with real voice clips: 0.5 is a good starting point
+- Custom trained with real voice clips + ambient negatives: 0.5–0.8 works well
+
+The assistant defaults to `WAKE_THRESHOLD=0.8`. Check `~/assistant.env` on the board — it can override the code default.
+
+**Version compatibility**: The openWakeWord version on the board must match the trainer (v0.6.0+). Different versions normalize model output differently, causing score offsets (~0.5 baseline instead of ~0.0).
 
 Tune based on your false positive vs. missed detection trade-off.

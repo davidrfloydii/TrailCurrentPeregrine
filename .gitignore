@@ -17,6 +17,10 @@ assistant-env/
 *.pt
 *.safetensors
 
+# Exception: wake word model in models/ is small (~415 KB) and needed by deploy.sh
+!models/*.onnx
+!models/*.onnx.data
+
 # Audio artifacts
 *.wav
 *.flac

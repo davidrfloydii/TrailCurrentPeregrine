@@ -47,25 +47,25 @@ SSH="ssh -o ControlPath=$SOCK"
 $SSH "$TARGET" "mkdir -p ${REMOTE_HOME}/models"
 
 # Ensure Python dependencies are up to date
-echo "[0/3] Checking Python dependencies..."
+echo "[1/4] Checking Python dependencies..."
 # --no-deps: tflite-runtime has no aarch64 wheel and we only use ONNX inference.
 # --force-reinstall ensures resource files (melspectrogram.onnx, embedding_model.onnx)
 # are included even when upgrading across major versions.
 $SSH "$TARGET" "${REMOTE_HOME}/assistant-env/bin/pip install -q --force-reinstall --no-deps openwakeword 2>&1 | tail -1"
 
 # Copy assistant.py
-echo "[1/3] Copying assistant.py..."
+echo "[2/4] Copying assistant.py..."
 $SCP "${SCRIPT_DIR}/src/assistant.py" "${TARGET}:${REMOTE_HOME}/assistant.py"
 
 # Copy wake word model
-echo "[2/3] Copying wake word model..."
+echo "[3/4] Copying wake word model..."
 $SCP "${SCRIPT_DIR}/models/hey_peregrine.onnx" "${TARGET}:${REMOTE_HOME}/models/hey_peregrine.onnx"
 if [[ -f "${SCRIPT_DIR}/models/hey_peregrine.onnx.data" ]]; then
     $SCP "${SCRIPT_DIR}/models/hey_peregrine.onnx.data" "${TARGET}:${REMOTE_HOME}/models/hey_peregrine.onnx.data"
 fi
 
 # Copy service file
-echo "[3/3] Copying service file..."
+echo "[4/4] Copying service file..."
 $SCP "${SCRIPT_DIR}/config/voice-assistant.service" "${TARGET}:/tmp/voice-assistant.service"
 $SSH "$TARGET" "sudo cp /tmp/voice-assistant.service /etc/systemd/system/voice-assistant.service && sudo systemctl daemon-reload && rm /tmp/voice-assistant.service"
 

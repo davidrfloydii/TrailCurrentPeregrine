@@ -17,32 +17,26 @@ The result is a ~200 KB model that runs on CPU in real-time with negligible reso
 
 | Requirement | Details |
 |-------------|---------|
-| **WSL2 or Linux** | Ubuntu recommended (`wsl --install -d Ubuntu` on Windows) |
+| **Linux** | Ubuntu recommended (native or WSL2) |
 | **NVIDIA GPU** | CUDA drivers installed (WSL2 includes CUDA passthrough automatically) |
 | **Disk space** | ~15 GB free (temporary downloads; deletable after training) |
-| **Python 3.10+** | Inside WSL2/Linux (`python3 --version`) |
+| **Python 3.10+** | `python3 --version` |
 | **Time** | ~1–2 hours with GPU, 12–24 hours CPU-only |
 
-### Verify CUDA (WSL2)
+### Verify CUDA
 
 ```bash
-wsl
 nvidia-smi
+python3 -c "import torch; print(torch.cuda.is_available())"
 ```
 
-You should see your GPU listed. If not, update your NVIDIA Windows driver to the latest version.
+You should see your GPU listed and `True` printed. If using WSL2, CUDA passthrough is included automatically with recent NVIDIA Windows drivers.
 
 ## Quick Start
 
 ### Option A: One-liner
 
 ```bash
-# From PowerShell (Windows) — cd to the repo first:
-cd path\to\openwakeword-trainer
-wsl -- bash train.sh
-
-# Or from within WSL2/Linux:
-cd /mnt/c/path/to/openwakeword-trainer
 bash train.sh
 ```
 
@@ -51,11 +45,7 @@ This creates an isolated virtualenv, installs dependencies, downloads datasets, 
 ### Option B: Step-by-step
 
 ```bash
-# Enter WSL2 and navigate to the repo
-wsl
-cd /mnt/c/path/to/openwakeword-trainer
-
-# Create & activate a training venv (use native filesystem, not /mnt/c/)
+# Create & activate a training venv
 python3 -m venv ~/.oww-trainer-venv
 source ~/.oww-trainer-venv/bin/activate
 
@@ -125,6 +115,36 @@ cd openwakeword-trainer/
 python train_wakeword.py --config configs/my_word.yaml
 ```
 
+### Ambient Noise Negatives
+
+The model needs non-speech negative examples (silence, fan noise, road noise, etc.) to avoid false triggers on ambient sounds. Without these, the model may score ~0.5 on silence instead of ~0.0.
+
+```bash
+cd ../  # back to training/
+
+# Generate synthetic noise + download MS-SNSD (MIT) and MUSAN (CC0) recordings
+python3 generate_ambient_negatives.py
+
+# Build the ambient feature file (.npy) for training
+python3 build_ambient_features.py
+```
+
+This populates `real_clips_negative/` with ambient noise clips and produces `data/negative_features_ambient.npy`. Reference this file in your training config:
+
+```yaml
+feature_data_files:
+  "negative_broad": "data/negative_features_librispeech_voxpopuli.npy"
+  "negative_ambient": "data/negative_features_ambient.npy"
+
+batch_n_per_class:
+  "negative_broad": 512
+  "negative_ambient": 100
+  "adversarial_negative": 50
+  "positive": 150
+```
+
+Ambient clips must be exactly 2 seconds (32000 samples at 16 kHz) to produce the correct feature shape of (N, 16, 96).
+
 ## Pipeline Steps
 
 The pipeline runs **13 granular steps**, each with built-in verification. If any step fails, it stops immediately and tells you exactly how to resume.
@@ -149,6 +169,12 @@ If any step fails:
 ```
 Pipeline stopped.  Fix the issue above, then resume:
   python train_wakeword.py --from <failed-step>
+```
+
+**Important**: The pipeline skips the train step if the output model already exists. Before retraining, always delete the old model:
+```bash
+rm -f output/hey_peregrine.onnx output/hey_peregrine.onnx.data
+rm -f export/hey_peregrine.onnx export/hey_peregrine.onnx.data
 ```
 
 ## CLI Reference
@@ -177,15 +203,15 @@ python train_wakeword.py --list-steps
 
 The export step produces two files that must be kept together:
 
-- `hey_echo.onnx` — the model graph (~14 KB)
-- `hey_echo.onnx.data` — external weights (~200 KB)
+- `hey_peregrine.onnx` — the model graph (~14 KB)
+- `hey_peregrine.onnx.data` — external weights (~200 KB)
 
 Copy **both** files to your project. The trained model works with any openWakeWord-compatible runtime:
 
 ```python
 from openwakeword.model import Model
 
-oww = Model(wakeword_models=["export/hey_echo.onnx"])
+oww = Model(wakeword_models=["export/hey_peregrine.onnx"])
 
 # Feed 16 kHz audio frames
 prediction = oww.predict(audio_frame)
@@ -197,26 +223,31 @@ Or with ONNX Runtime directly:
 import onnxruntime as ort
 import numpy as np
 
-sess = ort.InferenceSession("export/hey_echo.onnx")
+sess = ort.InferenceSession("export/hey_peregrine.onnx")
 # Input shape: [1, 16, 96] (mel spectrogram features)
 result = sess.run(None, {"x": features})
 ```
+
+**Version compatibility**: The openWakeWord version on your deployment target must match the version used during training (v0.6.0+). Different versions normalize model output differently, causing score offsets (~0.5 baseline instead of ~0.0).
 
 ## Configuration Reference
 
 See [configs/hey_echo.yaml](configs/hey_echo.yaml) for a fully commented example. Key settings:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `model_name` | — | Name for the model (used for filenames) |
-| `target_phrase` | — | List of phrases to detect |
-| `custom_negative_phrases` | `[]` | Phrases to explicitly reject |
-| `n_samples` | `50000` | Number of positive training clips |
-| `tts_batch_size` | `25` | Piper TTS batch size (reduce for low VRAM) |
-| `model_type` | `"dnn"` | `"dnn"` or `"rnn"` |
-| `layer_size` | `32` | Hidden layer size (32=fast, 64/128=higher capacity) |
-| `steps` | `50000` | Training steps |
-| `target_false_positives_per_hour` | `0.2` | Target false positive rate |
+| Setting | Default | hey_peregrine | Description |
+|---------|---------|---------------|-------------|
+| `model_name` | — | `hey_peregrine` | Name for the model (used for filenames) |
+| `target_phrase` | — | `hey peregrine` | List of phrases to detect |
+| `custom_negative_phrases` | `[]` | 10 phrases | Phrases to explicitly reject |
+| `n_samples` | `50000` | `50000` | Number of positive training clips |
+| `tts_batch_size` | `25` | `25` | Piper TTS batch size (reduce for low VRAM) |
+| `model_type` | `"dnn"` | `"dnn"` | `"dnn"` or `"rnn"` |
+| `layer_size` | `32` | `128` | Hidden layer size (32=fast, 128=higher capacity) |
+| `steps` | `50000` | `200000` | Training steps |
+| `augmentation_rounds` | `1` | `3` | Data augmentation multiplier |
+| `target_false_positives_per_hour` | `0.2` | `0.5` | Target false positive rate |
+
+For multi-word or phonetically complex phrases like "hey peregrine", use `layer_size: 128` and `steps: 200000` for better accuracy.
 
 ## Threshold Tuning
 
@@ -224,9 +255,12 @@ After training, tune the detection threshold for your use case:
 
 | Problem | Fix |
 |---------|-----|
-| False activations (triggers when you didn't say it) | Increase threshold: 0.5 → 0.6 → 0.7 |
-| Missed activations (need to over-pronounce) | Decrease threshold: 0.5 → 0.4 → 0.3 |
+| False activations (triggers when you didn't say it) | Increase threshold: 0.5 -> 0.6 -> 0.7 |
+| Missed activations (need to over-pronounce) | Decrease threshold: 0.5 -> 0.4 -> 0.3 |
 | False triggers on similar words | Add to `custom_negative_phrases` and retrain |
+| False triggers on silence/ambient noise | Add ambient negatives (see above) and retrain |
+
+Custom models with real voice clips typically work well at threshold 0.5–0.8. Synthetic-only models may need 0.3–0.4.
 
 ## Compatibility Patches
 
@@ -234,13 +268,13 @@ This toolkit includes automatic patches for known breaking changes in modern dep
 
 | Issue | Affected | Patch |
 |-------|----------|-------|
-| `torchaudio.load()` removed | torchaudio ≥2.10 | Soundfile-based replacement with automatic 22050→16000 Hz resampling |
-| `torchaudio.info()` removed | torchaudio ≥2.10 | Soundfile-based metadata reader |
-| `torchaudio.list_audio_backends()` removed | torchaudio ≥2.10 | Returns `["soundfile"]` for speechbrain compat |
-| `pkg_resources` removed | setuptools ≥82 | Auto-installs setuptools<82 |
+| `torchaudio.load()` removed | torchaudio >=2.10 | Soundfile-based replacement with automatic 22050->16000 Hz resampling |
+| `torchaudio.info()` removed | torchaudio >=2.10 | Soundfile-based metadata reader |
+| `torchaudio.list_audio_backends()` removed | torchaudio >=2.10 | Returns `["soundfile"]` for speechbrain compat |
+| `pkg_resources` removed | setuptools >=82 | Auto-installs setuptools<82 |
 | Piper API change | piper-sample-generator v2+ | Auto-resolves `model=` kwarg |
 | `torchcodec` missing | MIT RIR dataset loading | `pip install torchcodec` |
-| `sph_harm` renamed to `sph_harm_y` | scipy ≥1.17 + acoustics lib | Wrapper with swapped args |
+| `sph_harm` renamed to `sph_harm_y` | scipy >=1.17 + acoustics lib | Wrapper with swapped args |
 
 Patches are applied and verified automatically during the `apply-patches` step.
 
@@ -258,16 +292,13 @@ Keep only the `export/` directory with your trained model.
 ## Troubleshooting
 
 ### `piper-phonemize` fails to install
-This package only has Linux wheels. Make sure you're running inside WSL2, not native Windows.
-
-### `nvidia-smi` not found in WSL2
-Update your NVIDIA Windows driver to the latest version. WSL2 CUDA passthrough is included automatically.
+This package only has Linux wheels. If on Windows, make sure you're running inside WSL2.
 
 ### Training is very slow
 Verify CUDA is available: `python -c "import torch; print(torch.cuda.is_available())"`. If `False`, everything falls back to CPU.
 
 ### Out of GPU memory
-Reduce `tts_batch_size` in your config (e.g., 25 → 10).
+Reduce `tts_batch_size` in your config (e.g., 25 -> 10). If training on a shared GPU, stop other GPU consumers (e.g., ComfyUI) first.
 
 ### Download stalls
 Re-run the script — all downloads are idempotent and resume where they left off.
@@ -280,6 +311,12 @@ scipy 1.17+ renamed `sph_harm` to `sph_harm_y` with different argument order. Th
 
 ### Model detects well in training but poorly on real speech
 Train with real voice recordings — see "Improve with Real Voice Recordings" above. Synthetic-only models score inconsistently on actual speech. Lower the detection threshold (0.5 or lower) for custom models.
+
+### `onnx_tf` error at end of training
+The pipeline exports ONNX successfully but may fail at TFLite conversion (`ModuleNotFoundError: No module named 'onnx_tf'`). This is harmless — we only use the ONNX model.
+
+### Model outputs ~0.5 on silence
+Missing ambient noise negatives. See "Ambient Noise Negatives" above. The model has only seen speech negatives and doesn't know how to score non-speech input.
 
 ## License
 

@@ -9,8 +9,14 @@
 # Idempotent — safe to re-run on a fresh board or an existing one.
 # Each step checks whether work is already done and skips if so.
 #
-# Run as root on the board:
-#   chmod +x setup-board.sh && ./setup-board.sh
+# Fresh board:
+#   chmod +x setup-board.sh && sudo ./setup-board.sh
+#
+# Existing board (e.g., after OS update or to apply new hardening):
+#   sudo ./setup-board.sh
+#
+# After setup, deploy application code from your dev machine:
+#   ./deploy.sh assistant@<board-ip>
 # ============================================================================
 
 set -uo pipefail

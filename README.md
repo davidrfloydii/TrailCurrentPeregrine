@@ -19,40 +19,88 @@ All processing happens on-device. No cloud services required.
 ```
 TrailCurrentPeregrine/
 ├── src/
-│   └── assistant.py              # Main voice assistant loop
+│   └── assistant.py                  # Main voice assistant loop
 ├── config/
-│   ├── voice-assistant.service   # systemd unit file
-│   └── pulse-default.pa          # PulseAudio config for assistant user
+│   ├── voice-assistant.service       # systemd unit file
+│   └── pulse-default.pa              # PulseAudio config (disabled by setup)
 ├── setup/
-│   └── setup-assistant.sh        # One-shot board provisioning script
-├── deploy.sh                     # Deploy to board via SSH
+│   └── setup-board.sh                # Board provisioning & hardening (idempotent)
+├── deploy.sh                         # Deploy code & models to board via SSH
 ├── models/
-│   ├── hey_peregrine.onnx        # Custom wake word model (graph)
-│   └── hey_peregrine.onnx.data   # Custom wake word model (weights)
+│   ├── hey_peregrine.onnx            # Custom wake word model (graph)
+│   └── hey_peregrine.onnx.data       # Custom wake word model (weights)
+├── docs/
+│   └── future-vision-modes.md        # Vision, safety chain, operating modes roadmap
 ├── training/
-│   ├── record_wake_word.py       # Record positive & negative clips for training
-│   ├── generate_tts_variants.py  # Generate voice-cloned TTS training clips
-│   ├── real_clips/               # Recorded wake word samples (positive)
-│   ├── real_clips_negative/      # Recorded similar-phrase samples (negative)
-│   └── openwakeword-trainer/     # Wake word training pipeline
+│   ├── record_wake_word.py           # Record positive & negative clips for training
+│   ├── generate_tts_variants.py      # Generate voice-cloned TTS training clips
+│   ├── generate_negative_clips.py    # Generate negative phrase TTS clips
+│   ├── generate_ambient_negatives.py # Generate/download ambient noise negatives
+│   ├── build_ambient_features.py     # Featurize ambient clips to .npy for training
+│   ├── real_clips/                   # Recorded wake word samples (positive)
+│   ├── real_clips_negative/          # Recorded negative samples (similar phrases, ambient)
+│   └── openwakeword-trainer/         # Wake word training pipeline (13-step)
+│       ├── train_wakeword.py         # Training orchestrator
+│       ├── configs/
+│       │   └── hey_peregrine.yaml    # Active training config
+│       └── docs/
+│           └── training_notes.md     # Technical notes & troubleshooting
 └── README.md
 ```
 
-## Quick Start
+## Getting Started
 
-### 1. Provision the board
+### Fresh Board Setup
 
 Copy the repo to the Radxa board and run the setup script as root:
 
 ```bash
 cd setup/
-chmod +x setup-assistant.sh
-sudo ./setup-assistant.sh
+chmod +x setup-board.sh
+sudo ./setup-board.sh
 ```
 
-This installs all dependencies, downloads models, creates the `assistant` user, deploys the custom wake word model, and registers the systemd service.
+This performs a complete provisioning:
+- Installs system packages (Python, ffmpeg, ALSA, etc.)
+- Creates the `assistant` user (added to `audio` group)
+- Installs and tunes Ollama (8 threads, keep_alive=-1, localhost-only)
+- Creates a Python venv with all dependencies
+- Downloads the Piper TTS voice model
+- Deploys the custom wake word model
+- Registers and enables the systemd service
+- Hardens the board (disables desktop, GPU, NPU, HDMI, snap, unnecessary services)
+- Sets CPU governor to performance
+- Tunes kernel parameters (swappiness, dirty pages)
 
-### 2. Verify audio
+The script is **idempotent** — safe to re-run on an already-provisioned board. Each step checks whether work is already done and skips if so.
+
+### Updating a Deployed Board
+
+For routine code and model updates, use the deploy script from your dev machine:
+
+```bash
+./deploy.sh <board-ip>
+# or with explicit user
+./deploy.sh assistant@192.168.1.100
+```
+
+This copies `assistant.py`, the wake word model, and the systemd service file to the board, upgrades openwakeword, and reloads systemd. It creates a default `~/assistant.env` on first deploy but never overwrites it.
+
+After deploying, restart the service on the board:
+
+```bash
+sudo systemctl restart voice-assistant
+sudo journalctl -u voice-assistant -f
+```
+
+To re-run the full setup (e.g., after an OS update or to apply new hardening):
+
+```bash
+cd setup/
+sudo ./setup-board.sh
+```
+
+### Verify Audio
 
 Switch to the assistant user and test hardware:
 
@@ -70,36 +118,34 @@ speaker-test -t wav -c 2 -l 1
 arecord -d 5 -f S16_LE -r 16000 /tmp/test.wav && aplay /tmp/test.wav
 ```
 
-### 3. Configure MQTT (optional)
+### Configure MQTT (optional)
 
-To enable device control, edit the systemd service with your MQTT broker details:
-
-```bash
-sudo systemctl edit voice-assistant
-```
-
-Add the following overrides:
-
-```ini
-[Service]
-Environment=MQTT_BROKER=192.168.x.x
-Environment=MQTT_PORT=8883
-Environment=MQTT_USE_TLS=true
-Environment=MQTT_CA_CERT=/home/assistant/ca.pem
-Environment=MQTT_USERNAME=your_username
-Environment=MQTT_PASSWORD=your_password
-```
-
-Or edit `/etc/systemd/system/voice-assistant.service` directly and reload:
+To enable device control, edit the environment file on the board:
 
 ```bash
-sudo systemctl daemon-reload
+nano ~/assistant.env
+```
+
+Uncomment and fill in your MQTT broker details:
+
+```bash
+MQTT_BROKER=192.168.x.x
+MQTT_PORT=8883
+MQTT_USE_TLS=true
+MQTT_CA_CERT=/home/assistant/ca.pem
+MQTT_USERNAME=your_username
+MQTT_PASSWORD=your_password
+```
+
+Then restart the service:
+
+```bash
 sudo systemctl restart voice-assistant
 ```
 
 Without MQTT configured, the assistant still works for general questions — device control commands will just report "not connected."
 
-### 4. Run interactively
+### Run Interactively
 
 ```bash
 su - assistant
@@ -108,7 +154,7 @@ su - assistant
 
 Say "Hey Peregrine" and ask a question or give a command.
 
-### 5. Enable as a service
+### Enable as a Service
 
 ```bash
 sudo systemctl start voice-assistant
@@ -133,19 +179,20 @@ Light commands and sensor queries use fast regex-based intent matching (no LLM r
 
 ## Configuration
 
-All settings are controlled via environment variables (set in the systemd unit or shell):
+All settings are controlled via environment variables. On the board, site-specific config lives in `~/assistant.env` (loaded by the systemd service). This file is never overwritten by setup or deploy.
 
 | Variable | Default | Description |
 |---|---|---|
 | `WAKE_MODEL` | `hey_peregrine` | openWakeWord model name |
 | `WAKE_MODEL_PATH` | *(auto-detected)* | Path to custom `.onnx` wake word model |
-| `WAKE_THRESHOLD` | `0.5` | Wake word detection threshold (0.0–1.0) |
+| `WAKE_THRESHOLD` | `0.8` | Wake word detection threshold (0.0–1.0) |
 | `WHISPER_SIZE` | `base.en` | Whisper model size |
 | `OLLAMA_MODEL` | `qwen2.5:0.5b` | Ollama model tag |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint |
 | `PIPER_MODEL` | `~/piper-voices/en_US-libritts_r-medium.onnx` | Path to Piper voice model |
 | `SILENCE_THRESHOLD` | `500` | Amplitude below which audio is silence |
 | `SILENCE_DURATION` | `1.5` | Seconds of silence before stopping recording |
+| `CPU_THREADS` | `8` | Threads for faster-whisper inference |
 | `MQTT_BROKER` | *(empty = disabled)* | MQTT broker hostname or IP |
 | `MQTT_PORT` | `8883` | MQTT broker port |
 | `MQTT_USE_TLS` | `true` | Enable TLS for MQTT connection |
@@ -183,9 +230,13 @@ For light commands, it publishes:
 
 ## Wake Word Training
 
-The custom "Hey Peregrine" wake word model is trained using the pipeline in `training/openwakeword-trainer/`. See that directory's README for full instructions.
+The custom "Hey Peregrine" wake word model is trained using the pipeline in `training/openwakeword-trainer/`. See that directory's [README](training/openwakeword-trainer/README.md) for the full 13-step pipeline and configuration reference.
 
-To record additional real voice clips for improving the model:
+Training runs on a dev workstation with an NVIDIA GPU (not on the target board).
+
+### Recording Real Voice Clips
+
+Real voice clips significantly improve detection accuracy over synthetic-only training:
 
 ```bash
 cd training/
@@ -200,32 +251,35 @@ python3 record_wake_word.py --suggest
 python3 record_wake_word.py --phrase "hey pelican" --count 10 --negative --auto
 ```
 
-Real voice clips significantly improve detection accuracy over synthetic-only training. Aim for 200+ positive clips and 50-100 negative clips from similar-sounding phrases.
+Aim for 200+ positive clips and 50-100 negative clips from similar-sounding phrases.
 
-## Deployment
+### Ambient Noise Negatives
 
-Use the deploy script to push code, models, and the service file to the board:
+The model also needs non-speech negatives (silence, fan noise, road noise) to avoid false triggers on ambient sounds:
 
 ```bash
+cd training/
+
+# Generate synthetic noise clips + download MS-SNSD (MIT) and MUSAN (CC0) recordings
+python3 generate_ambient_negatives.py
+
+# Build the ambient feature file for training
+python3 build_ambient_features.py
+```
+
+This populates `real_clips_negative/` with ambient noise clips across categories (fan noise, road noise, rain, HVAC, silence, etc.) and produces a `negative_features_ambient.npy` file used during training.
+
+### Deploying a New Model
+
+After training, copy the model to the board:
+
+```bash
+# Full deploy (code + model + service)
 ./deploy.sh <board-ip>
-# or with explicit user
-./deploy.sh assistant@192.168.1.100
-```
 
-This copies `src/assistant.py`, the wake word model, and the systemd service file, then reloads systemd. It also creates a default `~/assistant.env` on the board if one doesn't exist.
-
-After deploying, restart the service on the board:
-
-```bash
-sudo systemctl restart voice-assistant
-sudo journalctl -u voice-assistant -f
-```
-
-For wake word model updates only:
-
-```bash
+# Or model-only update
 scp models/hey_peregrine.onnx* assistant@<board-ip>:~/models/
-sudo systemctl restart voice-assistant
+ssh assistant@<board-ip> sudo systemctl restart voice-assistant
 ```
 
 ## Third-Party Licenses
