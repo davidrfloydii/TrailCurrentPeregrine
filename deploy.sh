@@ -52,6 +52,8 @@ echo "[1/4] Checking Python dependencies..."
 # --force-reinstall ensures resource files (melspectrogram.onnx, embedding_model.onnx)
 # are included even when upgrading across major versions.
 $SSH "$TARGET" "${REMOTE_HOME}/assistant-env/bin/pip install -q --force-reinstall --no-deps openwakeword 2>&1 | tail -1"
+# timezonefinder: DST-aware local time from GPS coordinates
+$SSH "$TARGET" "${REMOTE_HOME}/assistant-env/bin/pip install -q timezonefinder 2>&1 | tail -1"
 
 # Copy assistant.py
 echo "[2/4] Copying assistant.py..."

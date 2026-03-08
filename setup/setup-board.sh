@@ -159,6 +159,7 @@ if [[ -x "${VENV_DIR}/bin/python3" ]]; then
         paho-mqtt \
         numpy \
         requests \
+        timezonefinder \
     || step_fail "Some Python packages failed to install"
 
     # openwakeword installed separately with --no-deps because tflite-runtime
@@ -317,7 +318,6 @@ DISABLE_SERVICES=(
     switcheroo-control
     power-profiles-daemon
     udisks2
-    avahi-daemon
     cups cups-browsed
     ModemManager
     wpa_supplicant

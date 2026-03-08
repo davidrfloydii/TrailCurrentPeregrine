@@ -16,6 +16,13 @@ import re
 import signal
 import difflib
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+try:
+    from timezonefinder import TimezoneFinder
+    _tz_finder = TimezoneFinder()
+except ImportError:
+    _tz_finder = None
 
 import numpy as np
 from openwakeword.model import Model as WakeModel
@@ -964,11 +971,11 @@ def _get_light_status_response(light_id=None):
 
 
 def _gps_to_local_datetime(gps_time):
-    """Convert GPS UTC time to approximate local time using longitude.
+    """Convert GPS UTC time to local time using the IANA timezone for the
+    current GPS coordinates.  This handles DST transitions correctly.
 
-    Uses the longitude from local/gps/latlon to estimate the UTC offset
-    (each 15 degrees of longitude = 1 hour). Returns a datetime or None
-    if location data isn't available.
+    Falls back to a simple longitude-based offset if timezonefinder is
+    not installed.  Returns a naive local datetime or None.
     """
     gps = sensor_data.get("local/gps/latlon")
     if not gps or gps.get("longitude") is None:
@@ -979,6 +986,17 @@ def _gps_to_local_datetime(gps_time):
             gps_time["hour"], gps_time.get("minute", 0),
             gps_time.get("second", 0), tzinfo=timezone.utc,
         )
+
+        # Prefer real timezone lookup (DST-aware)
+        if _tz_finder is not None and gps.get("latitude") is not None:
+            tz_name = _tz_finder.timezone_at(
+                lat=gps["latitude"], lng=gps["longitude"],
+            )
+            if tz_name:
+                local_dt = utc_dt.astimezone(ZoneInfo(tz_name))
+                return local_dt.replace(tzinfo=None)
+
+        # Fallback: solar-time approximation (no DST)
         offset_hours = round(gps["longitude"] / 15)
         return utc_dt + timedelta(hours=offset_hours)
     except (ValueError, KeyError, TypeError):
