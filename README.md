@@ -1,6 +1,6 @@
 # TrailCurrentPeregrine
 
-Local voice assistant for the TrailCurrent platform, running on a Radxa Dragon Q6A (RK3588S, 8 GB RAM, Ubuntu Noble 24.04).
+Local voice assistant for the TrailCurrent platform, running on a Radxa Dragon Q6A (Qualcomm QCS6490, 8 GB RAM, Armbian Noble 24.04).
 
 ## Architecture
 
@@ -224,9 +224,9 @@ For light commands, it publishes:
 
 ## Hardware
 
-- **Board**: Radxa Dragon Q6A (RK3588S SoC, 8 GB RAM)
+- **Board**: Radxa Dragon Q6A (Qualcomm QCS6490 SoC, 8 GB RAM)
 - **Audio**: USB microphone + speaker (auto-detected via ALSA, uses arecord/aplay)
-- **Storage**: eMMC or SD card with Ubuntu Noble 24.04
+- **Storage**: eMMC or SD card with Armbian Noble 24.04
 
 ## Wake Word Training
 

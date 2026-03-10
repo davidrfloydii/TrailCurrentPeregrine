@@ -10,7 +10,7 @@ We evaluated several boards for this project:
 
 | Board | CPU | RAM | Price | Power | Verdict |
 |---|---|---|---|---|---|
-| **Radxa Dragon Q6A (RK3588S)** | 4x A76 + 4x A55 | 8 GB | $122 | 3–8W | **Winner** — best price/performance/power |
+| **Radxa Dragon Q6A (QCS6490)** | 4x Kryo 670 Gold + 4x Kryo 670 Silver | 8 GB | $122 | 3–8W | **Winner** — best price/performance/power |
 | Raspberry Pi 5 | 4x A76 | Up to 16 GB | $304+ | 5–12W | Fewer cores, higher price, NPU requires HAT |
 | Luckfox Omni3576 (RK3576) | 4x A72 + 4x A53 | 4/8 GB | $170 | ~5–8W | Older/slower cores, costs more |
 | NVIDIA Jetson Orin Nano Super | 6x A78AE | 8 GB | $360–587 | 7–25W | Excellent AI performance but too expensive and power-hungry for single-duty use |
