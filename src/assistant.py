@@ -493,6 +493,7 @@ def _connect_mqtt():
             client.subscribe("local/gps/latlon")
             client.subscribe("local/gps/time")
             client.subscribe("local/gps/alt")
+            client.subscribe("local/gps/details")
             client.subscribe("local/lights/+/status")
             client.subscribe("local/relays/+/status")
             client.subscribe("local/thermostat/status")
@@ -567,6 +568,18 @@ if MQTT_BROKER:
         print("WARNING: paho-mqtt not installed, MQTT disabled")
 
 
+def _degrees_to_cardinal(deg):
+    """Convert a compass bearing in degrees to a cardinal/intercardinal direction."""
+    directions = [
+        "north", "north-northeast", "northeast", "east-northeast",
+        "east", "east-southeast", "southeast", "south-southeast",
+        "south", "south-southwest", "southwest", "west-southwest",
+        "west", "west-northwest", "northwest", "north-northwest",
+    ]
+    idx = round(deg / 22.5) % 16
+    return directions[idx]
+
+
 def get_sensor_summary():
     """Build a human-readable summary of current sensor data for the LLM."""
     lines = []
@@ -612,6 +625,21 @@ def get_sensor_summary():
         lon = gps.get("longitude")
         if lat is not None and lon is not None:
             lines.append(f"Location: {lat}, {lon}")
+
+    gps_details = sensor_data.get("local/gps/details")
+    if gps_details:
+        num_sats = gps_details.get("numberOfSatellites")
+        if num_sats is not None:
+            lines.append(f"GPS satellites in use: {num_sats}")
+        speed = gps_details.get("speedOverGround")
+        if speed is not None:
+            lines.append(f"Speed: {speed} knots")
+        course = gps_details.get("courseOverGround")
+        if course is not None:
+            lines.append(f"Course over ground: {course}°")
+        gnss_mode = gps_details.get("gnssMode")
+        if gnss_mode is not None:
+            lines.append(f"GNSS mode: {gnss_mode}")
 
     if not lines:
         return "No sensor data available yet."
@@ -1301,6 +1329,19 @@ _ELEVATION_PATTERNS = [
     re.compile(r"\b(?:elevation|altitude)\b", re.I),
     re.compile(r"\bhow\s+high\s+(?:up\s+)?(?:am\s+i|are\s+we)\b", re.I),
 ]
+_HEADING_PATTERNS = [
+    re.compile(r"\b(?:heading|course|bearing|direction)\b", re.I),
+    re.compile(r"\bwhat\s+(?:direction|way)\s+(?:am\s+i|are\s+we)\b", re.I),
+    re.compile(r"\bwhich\s+(?:direction|way)\b", re.I),
+]
+_SPEED_PATTERNS = [
+    re.compile(r"\b(?:how\s+fast|speed|velocity)\b", re.I),
+]
+_SATELLITE_PATTERNS = [
+    re.compile(r"\bsatellite", re.I),
+    re.compile(r"\bhow\s+many\s+sat", re.I),
+    re.compile(r"\bgps\s+(?:signal|fix|status|lock)\b", re.I),
+]
 
 
 def _get_light_status_response(light_id=None):
@@ -1739,6 +1780,34 @@ def match_intent(text):
             if alt and alt.get("altitudeFeet") is not None:
                 return f"We're at {alt['altitudeFeet']} feet, or about {alt['altitudeInMeters']:.0f} meters above sea level."
             return "I don't have elevation data right now."
+
+    for pattern in _HEADING_PATTERNS:
+        if pattern.search(text):
+            print("  Intent: heading query")
+            details = sensor_data.get("local/gps/details")
+            if details and details.get("courseOverGround") is not None:
+                deg = details["courseOverGround"]
+                cardinal = _degrees_to_cardinal(deg)
+                return f"We're heading {cardinal} at {deg:.0f} degrees."
+            return "I don't have heading data right now."
+
+    for pattern in _SPEED_PATTERNS:
+        if pattern.search(text):
+            print("  Intent: speed query")
+            details = sensor_data.get("local/gps/details")
+            if details and details.get("speedOverGround") is not None:
+                knots = details["speedOverGround"]
+                mph = knots * 1.15078
+                return f"We're moving at {mph:.1f} miles per hour."
+            return "I don't have speed data right now."
+
+    for pattern in _SATELLITE_PATTERNS:
+        if pattern.search(text):
+            print("  Intent: satellite query")
+            details = sensor_data.get("local/gps/details")
+            if details and details.get("numberOfSatellites") is not None:
+                return f"We're currently tracking {details['numberOfSatellites']} satellites."
+            return "I don't have satellite data right now."
 
     return None  # No intent matched, fall back to LLM
 
