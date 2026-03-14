@@ -4,8 +4,8 @@
 #
 # Usage:
 #   ./deploy.sh <board-ip-or-hostname>
-#   ./deploy.sh 192.168.1.100
-#   ./deploy.sh root@192.168.1.100
+#   ./deploy.sh <board-ip>
+#   ./deploy.sh root@<board-ip>
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <host-or-user@host>"
-    echo "  e.g. $0 192.168.1.100"
+    echo "  e.g. $0 <board-ip>"
     exit 1
 fi
 
