@@ -1805,7 +1805,7 @@ def _clean_llm_response(text):
 
 
 def ask_llm(prompt):
-    """Send prompt to Ollama, return response text."""
+    """Send prompt to AI, return response text."""
     try:
         resp = requests.post(f"{OLLAMA_URL}/api/generate", json={
             "model": OLLAMA_MODEL,
@@ -1866,7 +1866,7 @@ def speak(text):
 
 
 # --- Pre-warm models ---
-print("Pre-warming Ollama model...")
+print("Pre-warming AI model...")
 try:
     requests.post(f"{OLLAMA_URL}/api/generate", json={
         "model": OLLAMA_MODEL,
@@ -1876,9 +1876,9 @@ try:
         "keep_alive": "30m",
         "options": {"num_predict": 5, "num_thread": _CPU_THREADS}
     }, timeout=30)
-    print("  Ollama model loaded and warm")
+    print("  AI model loaded and warm")
 except Exception as e:
-    print(f"  Ollama warmup failed (will load on first query): {e}")
+    print(f"  AI warmup failed (will load on first query): {e}")
 
 print("Pre-warming Piper TTS...")
 try:

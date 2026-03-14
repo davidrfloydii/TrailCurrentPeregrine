@@ -24,7 +24,7 @@ All processing happens on-device. No cloud services required.
 TrailCurrentPeregrine/
 ├── src/
 │   ├── assistant.py                  # Main voice assistant loop
-│   └── genie_server.py              # NPU LLM HTTP server (Ollama-compatible API)
+│   └── genie_server.py              # NPU LLM HTTP server (Genie /api/generate)
 ├── config/
 │   ├── voice-assistant.service       # systemd unit file
 │   ├── genie-server.service          # NPU LLM server systemd unit
@@ -199,7 +199,7 @@ All settings are controlled via environment variables. On the board, site-specif
 | `WAKE_MODEL_PATH` | *(auto-detected)* | Path to custom `.onnx` wake word model |
 | `WAKE_THRESHOLD` | `0.8` | Wake word detection threshold (0.0–1.0) |
 | `WHISPER_SIZE` | `base.en` | Whisper model size |
-| `OLLAMA_URL` | `http://localhost:11434` | LLM API endpoint (genie server) |
+| `LLM_URL` | `http://localhost:11434` | LLM API endpoint (Genie NPU server) |
 | `PIPER_MODEL` | `~/piper-voices/en_US-libritts_r-medium.onnx` | Path to Piper voice model |
 | `SILENCE_THRESHOLD` | `500` | Amplitude below which audio is silence |
 | `SILENCE_DURATION` | `1.5` | Seconds of silence before stopping recording |
