@@ -306,7 +306,7 @@ The script is **idempotent** — safe to re-run at any time. It performs:
 2. Installs system packages (Python, ffmpeg, ALSA, etc.)
 3. Installs NPU packages (fastrpc, libcdsprpc)
 4. Creates the `assistant` user (added to `audio` and `render` groups)
-5. Downloads the NPU LLM model (Qwen2.5-0.5B for Hexagon v68)
+5. Downloads the NPU LLM model (Llama 3.2 1B for Hexagon v68)
 6. Creates a Python venv with all dependencies
 7. Deploys the custom wake word model
 8. Downloads the Piper TTS voice model
@@ -370,13 +370,13 @@ arecord -d 5 -f S16_LE -r 16000 /tmp/test.wav && aplay /tmp/test.wav
 ```bash
 ssh root@<board-ip>
 
-cd /home/assistant/Qwen2.5-0.5B-v68
+cd /home/assistant/Llama3.2-1B-1024-v68
 export LD_LIBRARY_PATH=$(pwd)
-./genie-t2t-run -c qwen2.5-0.5B-1k-htp.json \
-    -p "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is 2 plus 2?<|im_end|>\n<|im_start|>assistant\n"
+./genie-t2t-run -c htp-model-config-llama32-1b-gqa.json \
+    -p "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nWhat is 2 plus 2?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
 ```
 
-Expected output: a coherent answer at ~24 tokens/second.
+Expected output: a coherent answer at ~12 tokens/second.
 
 ### 3.4 Test Piper TTS
 

@@ -32,7 +32,7 @@ import requests
 # --- Config (override via environment variables) ---
 WAKE_MODEL = os.getenv("WAKE_MODEL", "hey_peregrine")
 WHISPER_SIZE = os.getenv("WHISPER_SIZE", "base.en")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b-npu")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 PIPER_MODEL = os.getenv("PIPER_MODEL",
     os.path.expanduser("~/piper-voices/en_US-libritts_r-medium.onnx"))
@@ -1809,8 +1809,22 @@ def ask_llm(prompt):
         return "Sorry, the language model took too long to respond."
 
 
+def _strip_markdown(text):
+    """Remove markdown formatting so TTS doesn't read punctuation aloud."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)   # **bold**
+    text = re.sub(r'\*(.+?)\*', r'\1', text)        # *italic*
+    text = re.sub(r'__(.+?)__', r'\1', text)        # __bold__
+    text = re.sub(r'_(.+?)_', r'\1', text)          # _italic_
+    text = re.sub(r'`(.+?)`', r'\1', text)          # `code`
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headings
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)  # bullets
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)  # numbered lists
+    return text.strip()
+
+
 def speak(text):
     """Text to speech via Piper, played through speaker."""
+    text = _strip_markdown(text)
     print(f"  Speaking: {text[:100]}{'...' if len(text) > 100 else ''}")
     try:
         piper_proc = subprocess.Popen(

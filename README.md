@@ -12,7 +12,7 @@ The assistant runs an entirely offline voice pipeline:
 
 1. **Wake word** — openWakeWord (custom `hey_peregrine` model)
 2. **Speech-to-text** — faster-whisper (`base.en`, INT8 on CPU)
-3. **LLM** — Qwen 2.5 0.5B on Hexagon NPU via genie-t2t-run (~29 tok/s)
+3. **LLM** — Llama 3.2 1B on Hexagon NPU via genie-t2t-run (~12 tok/s)
 4. **Text-to-speech** — Piper TTS (`en_US-libritts_r-medium`)
 5. **Device control** — MQTT integration with TrailCurrent (lights, relays, sensors)
 
@@ -71,7 +71,7 @@ This performs a complete provisioning:
 - Installs system packages (Python, ffmpeg, ALSA, etc.)
 - Installs NPU packages (fastrpc, libcdsprpc for Hexagon DSP access)
 - Creates the `assistant` user (added to `audio` and `render` groups)
-- Downloads the NPU LLM model (Qwen2.5-0.5B for Hexagon v68)
+- Downloads the NPU LLM model (Llama 3.2 1B for Hexagon v68)
 - Creates a Python venv with all dependencies
 - Downloads the Piper TTS voice model
 - Deploys the custom wake word model
@@ -241,7 +241,7 @@ For device commands, it publishes:
 ## Hardware
 
 - **Board**: Radxa Dragon Q6A (Qualcomm QCS6490 SoC, 8 GB RAM)
-- **NPU**: Hexagon DSP v68 (12 TOPS) — runs LLM inference at ~29 tok/s
+- **NPU**: Hexagon DSP v68 (12 TOPS) — runs LLM inference at ~12 tok/s
 - **Audio**: USB microphone + speaker (auto-detected via ALSA, uses arecord/aplay)
 - **Storage**: M.2 2230 NVMe SSD with Radxa OS Noble 24.04 (Ubuntu-based)
 
@@ -368,7 +368,7 @@ ssh root@<board-ip> "chown assistant:assistant /home/assistant/models/hey_peregr
 |---|---|
 | [openWakeWord](https://github.com/dscripka/openWakeWord) | Apache 2.0 |
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | MIT |
-| [Qwen 2.5 0.5B](https://huggingface.co/Qwen/Qwen2.5-0.5B) | Apache 2.0 |
+| [Llama 3.2 1B](https://huggingface.co/meta-llama/Llama-3.2-1B) | Llama 3.2 Community |
 | Qualcomm Genie (genie-t2t-run) | Qualcomm proprietary (bundled with NPU model) |
 | [Piper TTS](https://github.com/rhasspy/piper) | MIT |
 | [Piper voice: en_US-libritts_r-medium](https://huggingface.co/rhasspy/piper-voices) | CC-BY-4.0 |

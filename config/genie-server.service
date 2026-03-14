@@ -1,5 +1,5 @@
 [Unit]
-Description=Genie NPU LLM Server (Qwen2.5-0.5B on Hexagon DSP)
+Description=Genie NPU LLM Server (Llama3.2-1B on Hexagon DSP)
 After=network.target
 
 [Service]
@@ -14,7 +14,7 @@ RestartSec=5
 
 Environment=HOME=/home/assistant
 Environment=PYTHONUNBUFFERED=1
-Environment=GENIE_DIR=/home/assistant/Qwen2.5-0.5B-v68
+Environment=GENIE_DIR=/home/assistant/Llama3.2-1B-1024-v68
 
 [Install]
 WantedBy=multi-user.target

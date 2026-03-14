@@ -15,21 +15,25 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # --- Config ---
-GENIE_DIR = os.getenv("GENIE_DIR", os.path.expanduser("~/Qwen2.5-0.5B-v68"))
+GENIE_DIR = os.getenv("GENIE_DIR", os.path.expanduser("~/Llama3.2-1B-1024-v68"))
 GENIE_BIN = os.path.join(GENIE_DIR, "genie-t2t-run")
-GENIE_CONFIG = os.path.join(GENIE_DIR, "qwen2.5-0.5B-1k-htp.json")
+GENIE_CONFIG = os.path.join(GENIE_DIR, "htp-model-config-llama32-1b-gqa.json")
 HOST = os.getenv("GENIE_HOST", "127.0.0.1")
 PORT = int(os.getenv("GENIE_PORT", "11434"))
 
 
 def build_prompt(system: str, user_prompt: str) -> str:
-    """Format system + user text into Qwen2.5 chat template."""
-    parts = []
+    """Format system + user text into Llama 3.2 chat template."""
+    parts = ["<|begin_of_text|>"]
     if system:
-        parts.append(f"<|im_start|>system\n{system}<|im_end|>")
-    parts.append(f"<|im_start|>user\n{user_prompt}<|im_end|>")
-    parts.append("<|im_start|>assistant\n")
-    return "\n".join(parts)
+        parts.append(
+            f"<|start_header_id|>system<|end_header_id|>\n\n{system}<|eot_id|>"
+        )
+    parts.append(
+        f"<|start_header_id|>user<|end_header_id|>\n\n{user_prompt}<|eot_id|>"
+    )
+    parts.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+    return "".join(parts)
 
 
 def run_genie(prompt: str, num_predict: int = 200) -> tuple[str, float]:
@@ -55,8 +59,8 @@ def run_genie(prompt: str, num_predict: int = 200) -> tuple[str, float]:
         match = re.search(r"\[BEGIN\]:\s*(.*)", output, re.DOTALL)
         text = match.group(1).strip() if match else ""
 
-    # Truncate at Qwen stop tokens that may appear in the output
-    for stop in ("<|endoftext|>", "<|im_end|>", "<|im_start|>"):
+    # Truncate at stop tokens that may appear in the output
+    for stop in ("<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>"):
         idx = text.find(stop)
         if idx != -1:
             text = text[:idx].strip()
@@ -97,7 +101,7 @@ class GenieHandler(BaseHTTPRequestHandler):
         response_text, duration = run_genie(prompt)
 
         reply = {
-            "model": "qwen2.5:0.5b-npu",
+            "model": "llama3.2:1b-npu",
             "response": response_text or "Sorry, I didn't get a response.",
             "done": True,
             "total_duration": int(duration * 1e9),

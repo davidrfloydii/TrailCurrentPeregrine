@@ -31,7 +31,7 @@ VENV_DIR="${ASSISTANT_HOME}/assistant-env"
 PIPER_VOICE="en_US-libritts_r-medium"
 PIPER_VOICE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium"
 PIPER_DIR="${ASSISTANT_HOME}/piper-voices"
-NPU_MODEL_DIR="${ASSISTANT_HOME}/Qwen2.5-0.5B-v68"
+NPU_MODEL_DIR="${ASSISTANT_HOME}/Llama3.2-1B-1024-v68"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -132,9 +132,9 @@ fi
 usermod -aG audio,render "${ASSISTANT_USER}" 2>/dev/null || true
 
 # ============================================================================
-# 5. NPU LLM model (Qwen2.5-0.5B for Hexagon v68)
+# 5. NPU LLM model (Llama3.2-1B for Hexagon v68)
 # ============================================================================
-log "5. NPU LLM model (Qwen2.5-0.5B-v68)"
+log "5. NPU LLM model (Llama3.2-1B-1024-v68)"
 
 if [[ -f "${NPU_MODEL_DIR}/genie-t2t-run" && -d "${NPU_MODEL_DIR}/models" ]]; then
     log "  NPU model already downloaded at ${NPU_MODEL_DIR}"
@@ -143,8 +143,8 @@ else
     pip3 install --break-system-packages -q modelscope 2>/dev/null \
         || step_fail "Failed to install modelscope"
 
-    log "  Downloading Qwen2.5-0.5B-v68 from ModelScope (this will take a while)..."
-    modelscope download --model radxa/Qwen2.5-0.5B-v68 --local "${NPU_MODEL_DIR}" \
+    log "  Downloading Llama3.2-1B-1024-v68 from ModelScope (this will take a while)..."
+    modelscope download --model radxa/Llama3.2-1B-1024-qairt-v68 --local "${NPU_MODEL_DIR}" \
         || step_fail "Failed to download NPU model"
 fi
 
@@ -249,7 +249,7 @@ log "9. systemd services"
 # No hardening (ProtectSystem etc.) — it breaks DSP access via /dev/fastrpc-*
 cat > /etc/systemd/system/genie-server.service << EOF
 [Unit]
-Description=Genie NPU LLM Server (Qwen2.5-0.5B on Hexagon DSP)
+Description=Genie NPU LLM Server (Llama3.2-1B on Hexagon DSP)
 After=network.target
 
 [Service]
@@ -689,10 +689,10 @@ echo "  echo 'Hello, I am your voice assistant.' | \\"
 echo "    ${VENV_DIR}/bin/piper --model ${PIPER_DIR}/${PIPER_VOICE}.onnx --output-raw | \\"
 echo "    aplay -r 22050 -f S16_LE -c 1"
 echo ""
-echo "  # Test NPU inference (Qwen2.5-0.5B on Hexagon DSP)"
+echo "  # Test NPU inference (Llama3.2-1B on Hexagon DSP)"
 echo "  cd ${NPU_MODEL_DIR} && export LD_LIBRARY_PATH=\$(pwd) && \\"
-echo "    ./genie-t2t-run -c qwen2.5-0.5B-1k-htp.json \\"
-echo "    -p '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nSay hello.<|im_end|>\n<|im_start|>assistant\n'"
+echo "    ./genie-t2t-run -c htp-model-config-llama32-1b-gqa.json \\"
+echo "    -p '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nSay hello.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n'"
 echo ""
 echo "  # Test genie server (NPU LLM over HTTP)"
 echo "  curl -s http://localhost:11434/api/generate -d '{\"prompt\":\"Say hello\",\"system\":\"Reply in one sentence.\"}' | python3 -m json.tool"
