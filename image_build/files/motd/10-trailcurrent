@@ -1,13 +1,13 @@
-#!/bin/sh
+#!/bin/bash
 # TrailCurrent Peregrine — MOTD banner
 # Installed to /etc/update-motd.d/10-trailcurrent
 
-GREEN='\033[32m'
-BGREEN='\033[92m'
-TEAL='\033[38;5;30m'
-BOLD='\033[1m'
-GRAY='\033[38;5;245m'
-RESET='\033[0m'
+GREEN=$'\033[32m'
+BGREEN=$'\033[92m'
+TEAL=$'\033[38;5;30m'
+BOLD=$'\033[1m'
+GRAY=$'\033[38;5;245m'
+RESET=$'\033[0m'
 
 PEREGRINE_REL=""
 if [ -f /etc/peregrine-release ]; then

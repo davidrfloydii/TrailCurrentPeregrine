@@ -6,6 +6,9 @@ __pycache__/
 dist/
 build/
 *.whl
+
+# Exception: rsdk build scripts are source code, not build artifacts
+!image_build/rsdk/src/share/rsdk/build/
 venv/
 .venv/
 assistant-env/

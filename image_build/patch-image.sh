@@ -172,20 +172,37 @@ cp "$SCRIPT_DIR/files/alsa/asound.conf" "$MOUNT_DIR/etc/asound.conf"
 
 # ── Bonus: Disable first-login wizard auto-launch (SSH-first workflow) ───────
 fix "Make first-login wizard opt-in (not auto-launch)"
-BASH_PROFILE="$MOUNT_DIR/home/trailcurrent/.bash_profile"
-if [[ -f "$BASH_PROFILE" ]]; then
-    sed -i '/peregrine-first-login/d' "$BASH_PROFILE"
-    sed -i '/peregrine-setup-complete/d' "$BASH_PROFILE"
+cat > "$MOUNT_DIR/home/trailcurrent/.bash_profile" << 'BASH_PROFILE_EOF'
+# ~/.bash_profile — TrailCurrent Peregrine
+# Run the first-login setup wizard manually if needed:
+#   peregrine-first-login.sh
+
+# Source .bashrc if it exists
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
 fi
+BASH_PROFILE_EOF
+chown 1000:1000 "$MOUNT_DIR/home/trailcurrent/.bash_profile"
 # Leave the wizard script installed — users can run it manually:
 #   /usr/local/bin/peregrine-first-login.sh
+
+# ── Bonus: Fix MOTD escape codes (sh -> bash + $'\033[...]' syntax) ──────────
+fix "Fix MOTD script shebang and escape code syntax"
+MOTD="$MOUNT_DIR/etc/update-motd.d/10-trailcurrent"
+if [[ -f "$MOTD" ]]; then
+    cp "$SCRIPT_DIR/files/motd/10-trailcurrent" "$MOTD"
+    chmod 755 "$MOTD"
+    echo "  replaced with fixed version from files/motd/10-trailcurrent"
+fi
 
 # ── Bonus: Skip firstboot reboot (SSH keys pre-generated) ───────────────────
 fix "Disable firstboot reboot (keys already present)"
 FIRSTBOOT="$MOUNT_DIR/usr/local/sbin/peregrine-firstboot.sh"
 if [[ -f "$FIRSTBOOT" ]]; then
-    sed -i 's|^systemctl reboot|# systemctl reboot  # patched: SSH keys pre-generated|' "$FIRSTBOOT"
-    sed -i 's|^sleep 3|# sleep 3|' "$FIRSTBOOT"
+    sed -i 's|^systemctl reboot.*|# systemctl reboot  # patched: no reboot needed|' "$FIRSTBOOT"
+    sed -i 's|^sleep 3$|# sleep 3|' "$FIRSTBOOT"
+    # Also remove the "Rebooting" log line
+    sed -i 's|^log "Rebooting.*|log "First-boot complete (no reboot needed)"|' "$FIRSTBOOT"
 fi
 
 # ── Verify ───────────────────────────────────────────────────────────────────

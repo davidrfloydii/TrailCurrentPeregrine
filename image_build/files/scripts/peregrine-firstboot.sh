@@ -47,9 +47,4 @@ fi
 # 4. Mark complete and disable this service
 touch /var/lib/peregrine/.firstboot-done
 systemctl disable peregrine-firstboot.service 2>/dev/null || true
-log "First-boot complete — service disabled"
-
-# 5. Reboot to apply all changes cleanly (sysctl, hostname, expanded fs)
-log "Rebooting in 3 seconds..."
-sleep 3
-systemctl reboot
+log "First-boot complete — service disabled. No reboot needed."
