@@ -25,10 +25,22 @@ FIRMWARE_DIR="${SCRIPT_DIR}/firmware"
 
 NPU_MODEL_ID="radxa/Llama3.2-1B-1024-qairt-v68"
 NPU_CACHE="${CACHE_DIR}/npu-model"
+# SHA256 hashes of known-good NPU model files.
+# If these change, the model was updated — re-run with --force-cache to replace.
+NPU_EXPECTED_HASHES=(
+    "db6ba32ae2040cf25ca10c8b2fff5a79cad00e08a6382628e9ae4f2ee8bbac21  ${NPU_CACHE}/genie-t2t-run"
+    "468972fb7949c1d8d71fe5b26a684c0d1745f6f45d93168a56c03702fe02ad1a  ${NPU_CACHE}/libGenie.so"
+    "dfe35ce9624c4231779ae52cf2d66a0154a941fb477f8df1eadf1d9ea675eb9a  ${NPU_CACHE}/models/weight_sharing_model_1_of_1.serialized.bin"
+)
 
 PIPER_VOICE="en_US-libritts_r-medium"
 PIPER_BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium"
 PIPER_CACHE="${CACHE_DIR}/piper-voice"
+# SHA256 hashes of known-good Piper voice files.
+PIPER_EXPECTED_HASHES=(
+    "10bb85e071d616fcf4071f369f1799d0491492ab3c5d552ec19fb548fac13195  ${PIPER_CACHE}/en_US-libritts_r-medium.onnx"
+    "b471dc60d2d8335e819c393d196d6fbf792817f40051257b269878505bc9afb3  ${PIPER_CACHE}/en_US-libritts_r-medium.onnx.json"
+)
 
 GREEN='\033[38;5;70m'
 TEAL='\033[38;5;30m'
@@ -188,42 +200,78 @@ step "8. Build cache"
 
 mkdir -p "$CACHE_DIR"
 
-# 8a. NPU model
-NPU_OK=false
-if [ -f "${NPU_CACHE}/genie-t2t-run" ] && [ -d "${NPU_CACHE}/models" ]; then
-    SIZE=$(du -sh "$NPU_CACHE" 2>/dev/null | cut -f1)
-    ok "NPU model cache present (${SIZE})"
-    NPU_OK=true
-else
-    if $DOWNLOAD_CACHE; then
-        warn "NPU model cache missing — downloading via modelscope"
-        if ! command -v modelscope >/dev/null 2>&1; then
-            warn "modelscope CLI not found — installing in user pipx env"
-            if command -v pipx >/dev/null 2>&1; then
-                pipx install modelscope || fail "modelscope install failed"
-            else
-                pip3 install --user --break-system-packages modelscope || fail "modelscope install failed"
-            fi
+# Verify a list of "hash  path" entries. Sets HASH_OK=false and calls fail()
+# for any mismatch. Prints ok() for each passing file.
+verify_hashes() {
+    local label="$1"; shift
+    local entries=("$@")
+    local all_ok=true
+    for entry in "${entries[@]}"; do
+        local expected_hash filepath
+        read -r expected_hash filepath <<< "$entry"
+        if [ ! -f "$filepath" ]; then
+            fail "$label: missing file $(basename "$filepath")"
+            all_ok=false
+            continue
         fi
-        rm -rf "${NPU_CACHE}.tmp"
-        mkdir -p "${NPU_CACHE}.tmp"
-        if modelscope download --model "$NPU_MODEL_ID" --local "${NPU_CACHE}.tmp"; then
-            rm -rf "$NPU_CACHE"
-            mv "${NPU_CACHE}.tmp" "$NPU_CACHE"
-            ok "NPU model downloaded ($(du -sh "$NPU_CACHE" | cut -f1))"
-            NPU_OK=true
+        local actual_hash
+        actual_hash=$(sha256sum "$filepath" | cut -d' ' -f1)
+        if [ "$actual_hash" = "$expected_hash" ]; then
+            ok "$label: $(basename "$filepath") hash verified"
         else
-            fail "NPU model download failed"
+            fail "$label: $(basename "$filepath") hash mismatch — re-run with --force-cache"
+            all_ok=false
         fi
+    done
+    $all_ok
+}
+
+download_npu_model() {
+    if ! command -v modelscope >/dev/null 2>&1; then
+        warn "modelscope CLI not found — installing"
+        if command -v pipx >/dev/null 2>&1; then
+            pipx install modelscope || { fail "modelscope install failed"; return 1; }
+        else
+            pip3 install --user --break-system-packages modelscope || { fail "modelscope install failed"; return 1; }
+        fi
+    fi
+    rm -rf "${NPU_CACHE}.tmp"
+    mkdir -p "${NPU_CACHE}.tmp"
+    if modelscope download --model "$NPU_MODEL_ID" --local "${NPU_CACHE}.tmp"; then
+        rm -rf "$NPU_CACHE"
+        mv "${NPU_CACHE}.tmp" "$NPU_CACHE"
+        ok "NPU model downloaded ($(du -sh "$NPU_CACHE" | cut -f1))"
+        return 0
+    else
+        fail "NPU model download failed"
+        return 1
+    fi
+}
+
+# 8a. NPU model
+if $FORCE_CACHE; then
+    warn "force-cache: removing NPU model cache for re-download"
+    rm -rf "$NPU_CACHE"
+fi
+
+if [ ! -f "${NPU_CACHE}/genie-t2t-run" ] || [ ! -d "${NPU_CACHE}/models" ]; then
+    if $DOWNLOAD_CACHE; then
+        warn "NPU model cache missing — downloading"
+        download_npu_model
     else
         fail "NPU model cache missing — re-run with --download-cache"
     fi
 fi
 
-if $FORCE_CACHE && $NPU_OK; then
-    warn "force-cache requested — re-downloading NPU model"
-    rm -rf "$NPU_CACHE"
-    NPU_OK=false
+if [ -f "${NPU_CACHE}/genie-t2t-run" ]; then
+    if ! verify_hashes "NPU model" "${NPU_EXPECTED_HASHES[@]}"; then
+        if $DOWNLOAD_CACHE; then
+            warn "NPU model hash mismatch — re-downloading"
+            rm -rf "$NPU_CACHE"
+            download_npu_model
+            verify_hashes "NPU model" "${NPU_EXPECTED_HASHES[@]}" || true
+        fi
+    fi
 fi
 
 # 8b. Piper voice
@@ -231,9 +279,12 @@ mkdir -p "$PIPER_CACHE"
 PIPER_ONNX="${PIPER_CACHE}/${PIPER_VOICE}.onnx"
 PIPER_JSON="${PIPER_CACHE}/${PIPER_VOICE}.onnx.json"
 
-if [ -f "$PIPER_ONNX" ] && [ -f "$PIPER_JSON" ]; then
-    ok "Piper voice cached ($(du -h "$PIPER_ONNX" | cut -f1))"
-else
+if $FORCE_CACHE; then
+    warn "force-cache: removing Piper voice cache for re-download"
+    rm -f "$PIPER_ONNX" "$PIPER_JSON"
+fi
+
+if [ ! -f "$PIPER_ONNX" ] || [ ! -f "$PIPER_JSON" ]; then
     if $DOWNLOAD_CACHE; then
         warn "Piper voice missing — downloading"
         curl -fsSL --output "$PIPER_ONNX" "${PIPER_BASE_URL}/${PIPER_VOICE}.onnx" && \
@@ -241,6 +292,19 @@ else
             ok "Piper voice downloaded" || fail "Piper voice download failed"
     else
         fail "Piper voice cache missing — re-run with --download-cache"
+    fi
+fi
+
+if [ -f "$PIPER_ONNX" ]; then
+    if ! verify_hashes "Piper voice" "${PIPER_EXPECTED_HASHES[@]}"; then
+        if $DOWNLOAD_CACHE; then
+            warn "Piper voice hash mismatch — re-downloading"
+            rm -f "$PIPER_ONNX" "$PIPER_JSON"
+            curl -fsSL --output "$PIPER_ONNX" "${PIPER_BASE_URL}/${PIPER_VOICE}.onnx" && \
+            curl -fsSL --output "$PIPER_JSON" "${PIPER_BASE_URL}/${PIPER_VOICE}.onnx.json" && \
+                ok "Piper voice re-downloaded" || fail "Piper voice re-download failed"
+            verify_hashes "Piper voice" "${PIPER_EXPECTED_HASHES[@]}" || true
+        fi
     fi
 fi
 

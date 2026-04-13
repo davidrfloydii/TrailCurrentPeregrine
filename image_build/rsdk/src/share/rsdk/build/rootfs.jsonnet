@@ -160,6 +160,27 @@ function(
             |||,
 
             // ════════════════════════════════════════════════════════════════
+            // Hook 3b: Remove rsetup-config-first-boot
+            //
+            // This Radxa package (pulled in by core.libjsonnet) installs
+            // /config/before.txt and runs rsetup.service on first boot.
+            // Its before.txt calls disable_service ssh, then only re-enables
+            // SSH if the board appears headless (DRM has no connected display).
+            // On the Q6A, DRM connectors may report "connected" even with no
+            // physical display — so SSH would never be re-enabled.
+            //
+            // We manage everything rsetup-config-first-boot does ourselves:
+            // SSH setup (hook 15), host key regen (hook 31), partition
+            // expansion (peregrine-firstboot.sh). Remove it before it runs.
+            // ════════════════════════════════════════════════════════════════
+            |||
+                set -e
+                echo "[hook 3b] removing rsetup-config-first-boot (Peregrine manages first-boot itself)"
+                chroot "$1" apt-get remove -y --purge rsetup-config-first-boot 2>/dev/null || true
+                echo "  rsetup-config-first-boot removed — rsetup.service will not override SSH"
+            |||,
+
+            // ════════════════════════════════════════════════════════════════
             // Hook 4: Create trailcurrent user (default password: trailcurrent)
             // ════════════════════════════════════════════════════════════════
             |||
@@ -238,21 +259,22 @@ function(
                 set -e
                 echo "[hook 8] creating venv and installing Python packages"
                 chroot "$1" python3 -m venv /home/trailcurrent/assistant-env
-                chroot "$1" /home/trailcurrent/assistant-env/bin/pip install --upgrade pip wheel setuptools
                 chroot "$1" /home/trailcurrent/assistant-env/bin/pip install \
-                    faster-whisper \
-                    piper-tts \
-                    paho-mqtt \
-                    numpy \
-                    scipy \
-                    scikit-learn \
-                    pathvalidate \
-                    requests \
-                    timezonefinder
+                    "pip==26.0.1" "wheel==0.46.3" "setuptools==82.0.1"
+                chroot "$1" /home/trailcurrent/assistant-env/bin/pip install \
+                    "faster-whisper==1.2.1" \
+                    "piper-tts==1.4.2" \
+                    "paho-mqtt==2.1.0" \
+                    "numpy==2.4.4" \
+                    "scipy==1.17.1" \
+                    "scikit-learn==1.8.0" \
+                    "pathvalidate==3.3.1" \
+                    "requests==2.33.1" \
+                    "timezonefinder==8.2.2"
                 # openwakeword installed separately with --no-deps
                 # (tflite-runtime has no aarch64 wheel; we only use ONNX inference)
                 chroot "$1" /home/trailcurrent/assistant-env/bin/pip install \
-                    --force-reinstall --no-deps openwakeword
+                    --force-reinstall --no-deps "openwakeword==0.6.0"
             |||,
 
             // ════════════════════════════════════════════════════════════════
@@ -341,6 +363,23 @@ function(
             |||
                 set -e
                 echo "[hook 15] enabling services"
+                # Fix Ubuntu 24.04 socket activation so ssh.service owns port 22.
+                #
+                # Problem: openssh-server postinst runs `deb-systemd-helper enable
+                # ssh.socket`, which creates:
+                #   /etc/systemd/system/ssh.service.requires/ssh.socket
+                # (because ssh.socket's [Install] has RequiredBy=ssh.service)
+                #
+                # `systemctl mask` creates /etc/systemd/system/ssh.socket -> /dev/null
+                # but does NOT remove the .requires/ symlink. At boot, systemd sees
+                # ssh.service Requires=ssh.socket (via .requires/), finds ssh.socket
+                # masked, and refuses to start ssh.service entirely.
+                #
+                # Fix: disable (removes .wants/.requires symlinks) → mask (blocks
+                # re-enable) → rm belt-and-suspenders in case disable missed it.
+                chroot "$1" systemctl disable ssh.socket 2>/dev/null || true
+                chroot "$1" systemctl mask ssh.socket 2>/dev/null || true
+                rm -f "$1/etc/systemd/system/ssh.service.requires/ssh.socket"
                 chroot "$1" systemctl enable \
                     genie-server.service \
                     voice-assistant.service \
@@ -661,6 +700,27 @@ function(
                 check "$1" /etc/sysctl.d/90-peregrine.conf
                 check "$1" /etc/asound.conf
                 check "$1" /etc/ssh/ssh_host_ed25519_key
+                # Verify ssh.socket is properly neutralized
+                if [ -L "$1/etc/systemd/system/ssh.socket" ] && \
+                   [ "$(readlink "$1/etc/systemd/system/ssh.socket")" = "/dev/null" ]; then
+                    echo "  ✓ ssh.socket masked → /dev/null"
+                else
+                    echo "  ✗ ssh.socket NOT masked (SSH will fail at boot)"
+                    FAIL=$((FAIL+1))
+                fi
+                if [ ! -e "$1/etc/systemd/system/ssh.service.requires/ssh.socket" ]; then
+                    echo "  ✓ ssh.service.requires/ssh.socket absent"
+                else
+                    echo "  ✗ ssh.service.requires/ssh.socket EXISTS (SSH will fail at boot)"
+                    FAIL=$((FAIL+1))
+                fi
+                # Verify rsetup-config-first-boot is gone
+                if ! chroot "$1" dpkg -l rsetup-config-first-boot >/dev/null 2>&1; then
+                    echo "  ✓ rsetup-config-first-boot not installed"
+                else
+                    echo "  ✗ rsetup-config-first-boot still installed (will override SSH on first boot)"
+                    FAIL=$((FAIL+1))
+                fi
                 for svc in genie-server voice-assistant cpu-performance power-save-hw peregrine-firstboot ssh; do
                     if chroot "$1" systemctl is-enabled "$svc" >/dev/null 2>&1; then
                         echo "  ✓ $svc enabled"

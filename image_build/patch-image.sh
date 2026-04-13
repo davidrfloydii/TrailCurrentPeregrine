@@ -128,10 +128,38 @@ cp "$SCRIPT_DIR/files/scripts/peregrine-self-test.sh" \
     "$MOUNT_DIR/usr/local/bin/peregrine-self-test.sh"
 chmod 755 "$MOUNT_DIR/usr/local/bin/peregrine-self-test.sh"
 
+# ── Fix 6a: Mask ssh.socket + remove .requires symlink ───────────────────────
+fix "Mask ssh.socket and remove ssh.service.requires/ssh.socket"
+# openssh-server postinst creates /etc/systemd/system/ssh.service.requires/ssh.socket
+# because ssh.socket's [Install] has RequiredBy=ssh.service. systemctl mask only
+# creates the /dev/null symlink — it does NOT remove .requires/. At boot, systemd
+# sees Requires=ssh.socket (via .requires/), finds it masked, and refuses to start
+# ssh.service. Must remove the .requires symlink explicitly.
+ln -sf /dev/null "$MOUNT_DIR/etc/systemd/system/ssh.socket"
+rm -f "$MOUNT_DIR/etc/systemd/system/ssh.service.requires/ssh.socket"
+echo "  ssh.socket → /dev/null"
+echo "  ssh.service.requires/ssh.socket → removed"
+
 # ── Fix 6: Clean sshd config (remove deprecated directives) ─────────────────
 fix "Install clean sshd config drop-in"
 cp "$SCRIPT_DIR/files/ssh/sshd_config.d/10-trailcurrent.conf" \
     "$MOUNT_DIR/etc/ssh/sshd_config.d/10-trailcurrent.conf"
+
+# ── Fix 6c: Neutralize rsetup-config-first-boot ──────────────────────────────
+fix "Neutralize rsetup first-boot config (would disable SSH on first boot)"
+# rsetup-config-first-boot installs /config/before.txt. On first boot,
+# rsetup.service runs it and calls disable_service ssh, then only re-enables
+# SSH if the board is "headless" (no DRM connector shows "connected"). On the
+# Q6A, DRM may report connected even with no display — SSH would never re-enable.
+# If the package was removed at build time (new builds), before.txt won't exist.
+# For older images, override it to unconditionally enable ssh.service.
+if [[ -f "$MOUNT_DIR/config/before.txt" ]]; then
+    printf 'no_fail\nenable_service ssh.service\ndisable_service ssh.socket\n' \
+        > "$MOUNT_DIR/config/before.txt"
+    echo "  /config/before.txt overridden — SSH enabled unconditionally on first boot"
+else
+    echo "  /config/before.txt not present (rsetup-config-first-boot already removed in build)"
+fi
 
 # ── Fix 7: Password not expired ─────────────────────────────────────────────
 fix "Reset password to 'trailcurrent' with no expiry"

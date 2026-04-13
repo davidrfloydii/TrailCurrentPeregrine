@@ -500,6 +500,8 @@ def _connect_mqtt():
             client.subscribe("local/level/tilt")
             client.subscribe("local/config/pdm_channels")
             client.subscribe("local/config/relay_channels")
+            # Request current config from Headwaters (in case retained topics are stale/absent)
+            client.publish("local/config/request", json.dumps({"source": "peregrine"}), qos=1)
             _mqtt_connected.set()
         else:
             print(f"MQTT connection failed (rc={rc})")
@@ -564,7 +566,10 @@ def _connect_mqtt():
 
 if MQTT_BROKER:
     try:
-        _connect_mqtt()
+        # Run MQTT connection in a background thread so wake word detection
+        # starts immediately regardless of broker reachability.
+        _mqtt_thread = threading.Thread(target=_connect_mqtt, daemon=True, name="mqtt")
+        _mqtt_thread.start()
     except ImportError:
         print("WARNING: paho-mqtt not installed, MQTT disabled")
 

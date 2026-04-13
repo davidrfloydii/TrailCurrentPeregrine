@@ -61,9 +61,8 @@ section "Preflight"
 
 [ "$(id -u)" -eq 0 ] || fatal "build.sh must be run as root (sudo)"
 
-if ! "$SCRIPT_DIR/preflight.sh" >/dev/null 2>&1; then
-    err "Preflight checks failed. Run for full output:"
-    err "  ./image_build/preflight.sh"
+if ! "$SCRIPT_DIR/preflight.sh" --download-cache; then
+    err "Preflight failed — see output above"
     exit 1
 fi
 log "Preflight passed"
@@ -108,10 +107,13 @@ log ""
 
 cd "$RSDK_DIR"
 
-# Always regenerate the guestfish disk-assembly script. rsdk caches this
-# separately from rootfs.tar and does NOT regenerate it when --sector-size
-# changes. Stale build-image = wrong GPT sector size = unbootable image.
-rm -f "$RSDK_DIR/out/radxa-dragon-q6a_noble_cli/build-image"
+# Always start from a clean slate. rsdk skips generate_rootfs entirely if
+# rootfs.tar exists — meaning all customize-hooks (our fixes) are silently
+# skipped on every build after the first. Delete both artifacts so the full
+# hook chain always runs and every build is identical and reproducible.
+RSDK_OUT_DIR="$RSDK_DIR/out/radxa-dragon-q6a_noble_cli"
+rm -f "$RSDK_OUT_DIR/build-image"
+rm -f "$RSDK_OUT_DIR/rootfs.tar"
 
 if ! "$RSDK_DIR/src/libexec/rsdk/rsdk-build" \
         $DEBUG_FLAG \
@@ -171,5 +173,5 @@ echo "         sudo ./image_build/flash.sh --os $FINAL_IMG"
 echo "    5. Connect Ethernet, power on, wait ~3 min for first boot"
 echo "    6. SSH:"
 echo "         ssh trailcurrent@peregrine.local"
-echo "         (default password: trailcurrent — first-login wizard will force a change)"
+echo "         (password: trailcurrent — no change required)"
 echo ""
